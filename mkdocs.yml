@@ -54,13 +54,13 @@ markdown_extensions:
   - md_in_html
 nav:
   - Home: index.md
-  - Getting Started: 01_getting_started.md
   - Data Pipeline:
-      - Data Sources: 02_data_pipeline/021_source.md
-      - Data Modeling: 02_data_pipeline/022_modeling.md
-      - Data Transformation: 02_data_pipeline/023_transformation.md
-  - Analytics: 03_analytics.md
-  - API Reference:
-      - Data Sources: 04_api_reference/041_data_sources.md
-      - Data Loading: 04_api_reference/042_data_loading.md
-      - Configuration: 04_api_reference/043_configuration.md
+      - Data Sources: 01_data_pipeline/source.md
+      - Batch Layer: 01_data_pipeline/batch_layer.md
+      - Speed Layer: 01_data_pipeline/speed_layer.md
+
+  # - Analytics: 03_analytics.md
+  # - API Reference:
+  #     - Data Sources: 04_api_reference/041_data_sources.md
+  #     - Data Loading: 04_api_reference/042_data_loading.md
+  #     - Configuration: 04_api_reference/043_configuration.md
