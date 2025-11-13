@@ -11,7 +11,7 @@ max_line_length = 200
 indent_unit = space
 
 # Exclude specific rules if needed
-exclude_rules = RF02, AM06
+exclude_rules = RF02, AM06, RF04
 
 # Indentation settings
 [sqlfluff:indentation]

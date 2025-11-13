@@ -55,7 +55,7 @@ jobs:
 
       - name: Run dbt deps
         run: |
-          cd dbt_project && uv run dbt deps
+          cd dbt_project && uv run dbt deps --target ci
 
       - name: Run SQLFluff lint
         run: |
