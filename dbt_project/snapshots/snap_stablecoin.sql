@@ -11,7 +11,7 @@
     )
 }}
 
-    select
+    SELECT
         contract_address,
         chain,
         symbol,
@@ -19,6 +19,6 @@
         currency,
         backing_type,
         decimals
-    from {{ ref('stg_stablecoin') }}
+    FROM {{ ref('stg_stablecoin') }}
 
 {% endsnapshot %}
