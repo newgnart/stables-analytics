@@ -51,7 +51,7 @@ jobs:
 
       - name: Run dbt debug
         run: |
-          cd dbt_project && uv run dbt debug
+          cd dbt_project && uv run dbt debug --target ci
 
       - name: Run dbt deps
         run: |
@@ -63,4 +63,4 @@ jobs:
 
       - name: Run dbt tests
         run: |
-          cd dbt_project && uv run dbt test
+          cd dbt_project && uv run dbt test --target ci
