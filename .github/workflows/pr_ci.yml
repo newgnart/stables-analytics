@@ -59,7 +59,7 @@ jobs:
 
       - name: Run SQLFluff lint
         run: |
-          cd dbt_project && uv run sqlfluff lint models
+          cd dbt_project && DBT_TARGET=ci uv run sqlfluff lint models
 
       - name: Run dbt tests
         run: |
