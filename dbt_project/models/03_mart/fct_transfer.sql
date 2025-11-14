@@ -92,7 +92,7 @@ enriched as (
 )
 
 select
-    -- transaction_hash,
+    transaction_hash,
     -- log_index,
     date_key,
     -- block_number,
