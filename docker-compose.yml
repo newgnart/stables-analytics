@@ -16,13 +16,13 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - kafka_network
+      - stables_analytics_kafka_network
 
 volumes:
   kafka_postgres_data:
     driver: local
 
 networks:
-  kafka_network:
+  stables_analytics_kafka_network:
     external: true
-    name: fa-dae2-capstone_kafka_network
+    name: stables_analytics_kafka_network

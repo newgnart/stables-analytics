@@ -1,0 +1,114 @@
+services:
+  # Core Infrastructure Services (start these for development)
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    ports:
+      - "9092:9092"
+      - "29092:29092" # Host access port
+    environment:
+      # Configure listeners for both docker and host communication
+      KAFKA_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://0.0.0.0:29092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT"
+
+      # Settings required for KRaft mode
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+
+      # Listener to use for broker-to-broker communication
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      # Required for a single node cluster
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+      # Extras
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      CLUSTER_ID: "xUl_ExjdQaSZB9OGK7wHYg"
+
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-topics --bootstrap-server kafka:9092 --list > /dev/null 2>&1",
+        ]
+      interval: 30s
+      retries: 10
+      start_period: 60s
+      timeout: 10s
+    networks:
+      - kafka_network
+    restart: unless-stopped
+
+  # Kafka UI for monitoring and debugging
+  kafdrop:
+    image: obsidiandynamics/kafdrop:4.0.0
+    platform: linux/amd64  # for Apple Silicon compatibility
+    ports:
+      - "9000:9000"
+    environment:
+      KAFKA_BROKERCONNECT: kafka:9092
+      JVM_OPTS: "-Xms32M -Xmx64M"
+      SERVER_SERVLET_CONTEXTPATH: "/"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka_network
+    restart: unless-stopped
+
+  # Application Services (start these separately with --profile app)
+  producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.producer
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - GRAPHQL_ENDPOINT=${GRAPHQL_ENDPOINT:-http://host.docker.internal:8080/v1/graphql}
+      - POLL_INTERVAL=${POLL_INTERVAL:-10}
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-stables-transfers}
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    profiles: ["app"]
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile.consumer
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-stables-transfers}
+      - KAFKA_BATCH_SIZE=${KAFKA_BATCH_SIZE:-100}
+      - KAFKA_MAX_RECORDS=${KAFKA_MAX_RECORDS:-}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_HOST=host.docker.internal
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-capstone}
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    profiles: ["app"]
+
+volumes:
+  kafka_data:
+    driver: local
+
+networks:
+  kafka_network:
+    driver: bridge
