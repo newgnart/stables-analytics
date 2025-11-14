@@ -1,7 +1,7 @@
 [project]
 name = "stables-analytics"
 version = "0.1.0"
-description = "Capstone project package for FA DAE2"
+description = "Stablecoins Analytics Pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -18,12 +18,14 @@ dependencies = [
     "pyarrow>=21.0.0",
     "python-dotenv>=1.0.0",
     "rich>=14.1.0",
-    "selenium>=4.27.1",
     "snowflake-connector-python>=3.17.4",
     "sqlalchemy>=2.0.43",
-    "webdriver-manager>=4.0.2",
 ]
 
 
 [dependency-groups]
 dev = ["sqlfluff>=3.5.0", "sqlfluff-templater-dbt>=3.5.0"]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["tests"]

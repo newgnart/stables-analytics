@@ -1,58 +1,62 @@
 #!/usr/bin/env python3
 """
-Simple database connection test for Week 02 Lab
+Database connection tests using pytest
 """
 
-import psycopg
+import os
+import pytest
 from dotenv import load_dotenv
 
-load_dotenv()
-from capstone_package.utils import PostgresClient, SnowflakeClient
+from scripts.utils.database_client import PostgresClient, SnowflakeClient
 
-# Load environment variables
+load_dotenv()
 
 
 def test_postgres_connection():
-    """Test database connection and return True if successful."""
-    try:
-        params = PostgresClient.from_env().get_connection_params()
-        print(f"🔌 Connecting to PostgreSQL at {params['host']}:{params['port']}...")
+    """Test PostgreSQL database connection and basic query execution."""
+    # Get client and connection parameters
+    client = PostgresClient.from_env()
+    params = client.connection_params
 
-        with psycopg.connect(**params) as conn:
-            with conn.cursor() as cur:
-                # Test basic query
-                cur.execute("SELECT version()")
-                version = cur.fetchone()[0]
-                print("✅ Connected successfully!")
-                print(f"📊 PostgreSQL version: {version.split(',')[0]}")
+    print(f"🔌 Connecting to PostgreSQL at {params['host']}:{params['port']}...")
 
-                return True
+    # Test connection using context manager
+    with client.get_connection() as conn:
+        assert conn is not None, "Connection should not be None"
 
-    except Exception as e:
-        print(f"❌ Connection failed: {str(e)}")
-        print("💡 Make sure PostgreSQL container is running with: docker-compose up -d")
-        return False
+        with conn.cursor() as cur:
+            # Test basic query
+            cur.execute("SELECT version()")
+            version = cur.fetchone()[0]
+
+            assert version is not None, "Version query should return a result"
+            assert "PostgreSQL" in version, "Version should contain 'PostgreSQL'"
+
+            print("✅ Connected successfully!")
+            print(f"📊 PostgreSQL version: {version.split(',')[0]}")
 
 
+@pytest.mark.skipif(
+    not os.getenv("SNOWFLAKE_PRIVATE_KEY_FILE"),
+    reason="Snowflake credentials not configured (SNOWFLAKE_PRIVATE_KEY_FILE not set)",
+)
 def test_snowflake_connection():
-    """Get Snowflake connection using private key authentication."""
-    load_dotenv()
+    """Test Snowflake connection using private key authentication."""
+    # Get client
+    client = SnowflakeClient.from_env()
 
-    try:
-        conn = SnowflakeClient().connection()
-        print("✅ Snowflake Connected successfully!")
-        return True
-    except Exception as e:
-        print(f"Snowflake Connection failed: {e}")
-        return False
+    # Test connection using context manager
+    with client.get_connection() as conn:
+        assert conn is not None, "Snowflake connection should not be None"
 
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT CURRENT_VERSION()")
+            version = cursor.fetchone()[0]
 
-if __name__ == "__main__":
-    success = test_postgres_connection()
-    if not success:
-        print("❌ PostgreSQL connection failed")
-        exit(1)
-    success = test_snowflake_connection()
-    if not success:
-        print("❌ Snowflake connection failed")
-        exit(1)
+            assert version is not None, "Version query should return a result"
+
+            print("✅ Snowflake connected successfully!")
+            print(f"📊 Snowflake version: {version}")
+        finally:
+            cursor.close()
