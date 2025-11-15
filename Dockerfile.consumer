@@ -1,0 +1,17 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen
+
+COPY consumer.py ./
+COPY services/ ./services/
+COPY utils/ ./utils/
+
+# Use internal network for Docker Compose
+ENV KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+
+CMD ["uv", "run", "consumer.py"]

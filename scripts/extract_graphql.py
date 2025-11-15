@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """
-GraphQL data fetcher with streaming and batch modes.
+GraphQL data fetcher
 
-This script fetches data from a GraphQL endpoint and either:
-1. Saves to Parquet file (batch mode)
-2. Pushes directly to database (streaming mode)
+This script fetches data from a GraphQL endpoint and saves to Parquet file
 """
 
 import argparse
@@ -22,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class GraphQLExtractor:
-    """Fetches data from GraphQL endpoint with streaming and batch modes."""
+    """Fetches data from GraphQL endpoint and saves to Parquet file"""
 
     def __init__(
         self,
@@ -30,7 +28,7 @@ class GraphQLExtractor:
         query: str,
     ):
         """
-        Initialize GraphQL fetcher.
+        Initialize GraphQL fetcher and set up session
 
         Args:
             endpoint: GraphQL endpoint URL

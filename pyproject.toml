@@ -1,3 +1,10 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["scripts*"]
+
 [project]
 name = "stables-analytics"
 version = "0.1.0"
@@ -5,6 +12,7 @@ description = "Stablecoins Analytics Pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "confluent-kafka>=2.6.1",
     "dbt-core>=1.10.13",
     "dbt-postgres>=1.9.1",
     "dbt-snowflake>=1.10.2",
@@ -17,14 +25,22 @@ dependencies = [
     "psycopg>=3.2.10",
     "pyarrow>=21.0.0",
     "python-dotenv>=1.0.0",
+    "requests>=2.32.0",
     "rich>=14.1.0",
     "snowflake-connector-python>=3.17.4",
     "sqlalchemy>=2.0.43",
 ]
 
+[project.scripts]
+kafka-init-schema = "scripts.kafka.init_kafka_schema:init_schema"
+kafka-producer = "scripts.kafka.producer:main"
+kafka-consumer = "scripts.kafka.consumer:main"
 
 [dependency-groups]
 dev = ["sqlfluff>=3.5.0", "sqlfluff-templater-dbt>=3.5.0"]
+
+[tool.uv]
+package = true
 
 [tool.pytest.ini_options]
 pythonpath = "."
