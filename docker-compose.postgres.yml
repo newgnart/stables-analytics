@@ -35,13 +35,13 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - stables_analytics_network
+      - network_01
 
 volumes:
   postgres_data:
     driver: local
 
 networks:
-  stables_analytics_network:
+  network_01:
     external: true
-    name: stables_analytics_network
+    driver: bridge

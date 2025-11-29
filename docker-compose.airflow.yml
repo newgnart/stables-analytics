@@ -1,76 +1,50 @@
-# Airflow Orchestration Docker Compose
-# Apache Airflow for workflow orchestration
-#
-# Usage:
-#   Start Airflow:
-#     docker-compose -f docker-compose.airflow.yml up -d
-#
-#   Stop Airflow:
-#     docker-compose -f docker-compose.airflow.yml down
-#
-#   Access Airflow UI:
-#     http://localhost:8282
-#     Default credentials: airflow / airflow
-#
-# Prerequisites:
-#   - Network: stables_analytics_network must exist
-#   - Run setup script: bash scripts/setup_airflow_connections.sh
-
 x-airflow-common: &airflow-common
   build:
     context: .
     dockerfile: Dockerfile.airflow
   environment: &airflow-common-env
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ""
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__TEST_CONNECTION: "Enabled" # NEW in W03
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://airflow-apiserver:8282/execution/"
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
-    AIRFLOW__API__PORT: 8282
     # Timezone Configuration
     AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Bangkok
     TZ: Asia/Bangkok
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
-    # Pass through environment variables for connections
-    POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
-    POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-    POSTGRES_DB: ${POSTGRES_DB:-postgres}
-    POSTGRES_USER: ${POSTGRES_USER:-postgres}
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-    KAFKA_TOPIC: ${KAFKA_TOPIC:-stables-transfers}
+    AIRFLOW_CONFIG: "/opt/airflow/config/airflow.cfg"
   volumes:
-    - ./airflow/dags:/opt/airflow/dags
-    - ./airflow/logs:/opt/airflow/logs
-    - ./airflow/config:/opt/airflow/config
-    - ./airflow/plugins:/opt/airflow/plugins
-    - ./scripts:/opt/airflow/scripts
-    - ./dbt_project:/opt/airflow/dbt_project
-    - /var/run/docker.sock:/var/run/docker.sock # For DockerOperator
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./config:/opt/airflow/config
+    - ./plugins:/opt/airflow/plugins
+    - ./requirements.txt:/requirements.txt
+    - ./.secret:/opt/airflow/.secret
+    - ./dbt_sf:/opt/airflow/dbt_sf
   user: "${AIRFLOW_UID:-50000}:0"
   networks:
-    - stables_analytics_network
+    - lab_kafka_network
   depends_on: &airflow-common-depends-on
-    airflow-postgres:
+    redis:
+      condition: service_healthy
+    postgres:
       condition: service_healthy
 
 services:
-  # ============================================================================
-  # AIRFLOW ORCHESTRATION INFRASTRUCTURE
-  # ============================================================================
-
-  # Airflow Metadata Database
-  airflow-postgres:
+  postgres:
     image: postgres:13
-    container_name: stables-airflow-postgres
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
       POSTGRES_DB: airflow
     volumes:
-      - airflow_postgres_data:/var/lib/postgresql/data
+      - postgres-db-volume:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 10s
@@ -78,18 +52,29 @@ services:
       start_period: 5s
     restart: always
     networks:
-      - stables_analytics_network
+      - lab_kafka_network
 
-  # Airflow Webserver - UI
-  airflow-webserver:
+  redis:
+    image: redis:7.2-bookworm
+    expose:
+      - 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
+    restart: always
+    networks:
+      - lab_kafka_network
+
+  airflow-apiserver:
     <<: *airflow-common
-    container_name: stables-airflow-webserver
     command: api-server
     ports:
-      - "${AIRFLOW_PORT:-8282}:8282"
+      - "8282:8282"
     healthcheck:
-      test:
-        ["CMD", "curl", "--fail", "http://localhost:8282/api/v2/monitor/health"]
+      test: ["CMD", "curl", "--fail", "http://localhost:8282/api/v2/version"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -100,10 +85,8 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # Airflow Scheduler - DAG Execution Manager
   airflow-scheduler:
     <<: *airflow-common
-    container_name: stables-airflow-scheduler
     command: scheduler
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
@@ -117,13 +100,15 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # Airflow DAG Processor - DAG Parsing (Airflow 3.0+)
   airflow-dag-processor:
     <<: *airflow-common
-    container_name: stables-airflow-dag-processor
     command: dag-processor
     healthcheck:
-      test: ["CMD-SHELL", "[ -f /opt/airflow/airflow-dag-processor.pid ]"]
+      test:
+        [
+          "CMD-SHELL",
+          'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"',
+        ]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -134,10 +119,49 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # Airflow Init - One-time Initialization
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}" || celery --app airflow.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"'
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    environment:
+      <<: *airflow-common-env
+      DUMB_INIT_SETSID: "0"
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-apiserver:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
   airflow-init:
     <<: *airflow-common
-    container_name: stables-airflow-init
     entrypoint: /bin/bash
     command:
       - -c
@@ -145,7 +169,10 @@ services:
         if [[ -z "${AIRFLOW_UID}" ]]; then
           echo
           echo -e "\033[1;33mWARNING!!!: AIRFLOW_UID not set!\e[0m"
-          echo "If you are on Linux, you SHOULD follow the instructions to set AIRFLOW_UID"
+          echo "If you are on Linux, you SHOULD follow the instructions below to set "
+          echo "AIRFLOW_UID environment variable, otherwise files will be owned by root."
+          echo "For other operating systems you can get rid of the warning with manually created .env file:"
+          echo "    See: https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#setting-the-right-airflow-user"
           echo
           export AIRFLOW_UID=$$(id -u)
         fi
@@ -178,11 +205,41 @@ services:
         if [[ $${warning_resources} == "true" ]]; then
           echo
           echo -e "\033[1;33mWARNING!!!: You have not enough resources to run Airflow (see above)!\e[0m"
+          echo "Please follow the instructions to increase amount of resources available:"
+          echo "   https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#before-you-begin"
           echo
         fi
+        echo
+        echo "Creating missing opt dirs if missing:"
+        echo
         mkdir -v -p /opt/airflow/{logs,dags,plugins,config}
-        chown -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
-        exec /entrypoint airflow version
+        echo
+        echo "Airflow version:"
+        /entrypoint airflow version
+        echo
+        echo "Files in shared volumes:"
+        echo
+        ls -la /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Running airflow config list to create default config file if missing."
+        echo
+        /entrypoint airflow config list >/dev/null
+        echo
+        echo "Files in shared volumes:"
+        echo
+        ls -la /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Change ownership of files in /opt/airflow to ${AIRFLOW_UID}:0"
+        echo
+        chown -R "${AIRFLOW_UID}:0" /opt/airflow/
+        echo
+        echo "Change ownership of files in shared volumes to ${AIRFLOW_UID}:0"
+        echo
+        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Files in shared volumes:"
+        echo
+        ls -la /opt/airflow/{logs,dags,plugins,config}
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: "true"
@@ -193,10 +250,8 @@ services:
     user: "0:0"
 
 volumes:
-  airflow_postgres_data:
-    driver: local
+  postgres-db-volume:
 
 networks:
-  stables_analytics_network:
+  lab_kafka_network:
     external: true
-    name: stables_analytics_network
