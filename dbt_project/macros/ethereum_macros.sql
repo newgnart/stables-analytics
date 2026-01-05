@@ -5,8 +5,7 @@
 
 
 {% macro uint256_to_numeric(hex_string) %}
-    -- Convert hex string to numeric using SQL
-    -- Handle uint256 values that exceed bigint limits
+    -- Convert hex string to numeric using SQL, Handle uint256 values that exceed bigint limits
     case
         when {{ hex_string }} is null then null
         else (
