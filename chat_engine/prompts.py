@@ -8,6 +8,7 @@ from typing import Literal, Optional, List, Dict, Any, Type
 
 MAX_REPLANS = 2
 
+
 # Custom State class with specific keys
 class State(MessagesState):
     enabled_agents: Optional[List[str]]
@@ -21,7 +22,9 @@ class State(MessagesState):
     replan_attempts: Optional[Dict[int, int]]
     agent_query: Optional[str]
 
+
 MAX_REPLANS = 2
+
 
 def get_agent_descriptions() -> Dict[str, Dict[str, Any]]:
     """
@@ -29,14 +32,14 @@ def get_agent_descriptions() -> Dict[str, Dict[str, Any]]:
     Edit this function to change how the planner/executor reason about agents.
     """
     return {
-        "web_researcher": {
-            "name": "Web Researcher",
-            "capability": "Fetch public data via Tavily web search",
-            "use_when": "Public information, news, current events, or external facts are needed",
+        "researcher": {
+            "name": "Researcher",
+            "capability": "Fetch public data via Tavily web search and/or search the knowledge base for relevant information about Open Stablecoin Index.",
+            "use_when": "Public information, news, current events, or external facts are needed or information about Open Stablecoin Index is needed",
             "limitations": "Cannot access private/internal company data",
-            "output_format": "Raw research data and findings from public sources",
+            "output_format": "Raw research data and findings from public sources and knowledge base",
         },
-        "cortex_researcher": {
+        "cortex_analyst": {
             "name": "Cortex Researcher",
             "capability": "Query private/company data in Snowflake, including structured deal records (company name, deal value, sales rep, close date, deal status, product line) and unstructured sales meeting notes, via Snowflake Cortex Agents.",
             "use_when": "Internal documents, company databases, or private data access is required",
@@ -68,21 +71,38 @@ def get_agent_descriptions() -> Dict[str, Dict[str, Any]]:
         },
     }
 
+
 def _get_enabled_agents(state: State | None = None) -> List[str]:
     """Return enabled agents; if absent, use baseline/default.
 
     Supports both dict-style and attribute-style state objects.
     """
-    baseline = ["web_researcher", "chart_generator", "chart_summarizer", "synthesizer"]
+    baseline = [
+        "researcher",
+        "chart_generator",
+        "chart_summarizer",
+        "synthesizer",
+    ]
     if not state:
         return baseline
-    val = state.get("enabled_agents") if hasattr(state, "get") else getattr(state, "enabled_agents", None)
-    
+    val = (
+        state.get("enabled_agents")
+        if hasattr(state, "get")
+        else getattr(state, "enabled_agents", None)
+    )
+
     if isinstance(val, list) and val:
-        allowed = {"web_researcher", "cortex_researcher", "chart_generator", "chart_summarizer", "synthesizer"}
+        allowed = {
+            "researcher",
+            "cortex_analyst",
+            "chart_generator",
+            "chart_summarizer",
+            "synthesizer",
+        }
         filtered = [a for a in val if a in allowed]
         return filtered
     return baseline
+
 
 def format_agent_list_for_planning(state: State | None = None) -> str:
     """
@@ -91,13 +111,14 @@ def format_agent_list_for_planning(state: State | None = None) -> str:
     descriptions = get_agent_descriptions()
     enabled_list = _get_enabled_agents(state)
     agent_list = []
-    
+
     for agent_key, details in descriptions.items():
         if agent_key not in enabled_list:
             continue
         agent_list.append(f"  • `{agent_key}` – {details['capability']}")
-    
+
     return "\n".join(agent_list)
+
 
 def format_agent_guidelines_for_planning(state: State | None = None) -> str:
     """
@@ -106,25 +127,38 @@ def format_agent_guidelines_for_planning(state: State | None = None) -> str:
     descriptions = get_agent_descriptions()
     enabled = set(_get_enabled_agents(state))
     guidelines = []
-    
+
     # Cortex vs Web researcher (only include guidance for enabled agents)
-    if "cortex_researcher" in enabled:
-        guidelines.append(f"- Use `cortex_researcher` when {descriptions['cortex_researcher']['use_when'].lower()}.")
-    if "web_researcher" in enabled:
-        guidelines.append(f"- Use `web_researcher` for {descriptions['web_researcher']['use_when'].lower()}.")
-    
+    if "cortex_analyst" in enabled:
+        guidelines.append(
+            f"- Use `cortex_analyst` when {descriptions['cortex_analyst']['use_when'].lower()}."
+        )
+    if "researcher" in enabled:
+        guidelines.append(
+            f"- Use `researcher` for {descriptions['researcher']['use_when'].lower()}."
+        )
+
     # Chart generator specific rules
     if "chart_generator" in enabled:
-        chart_desc = descriptions['chart_generator']
-        cs_hint = " A `chart_summarizer` should be used to summarize the chart." if "chart_summarizer" in enabled else ""
-        guidelines.append(f"- **Include `chart_generator` _only_ if {chart_desc['use_when'].lower()}**. If included, `chart_generator` must be {chart_desc['position_requirement'].lower()}. Visualizations should include all of the data from the previous steps that is reasonable for the chart type.{cs_hint}")
-    
+        chart_desc = descriptions["chart_generator"]
+        cs_hint = (
+            " A `chart_summarizer` should be used to summarize the chart."
+            if "chart_summarizer" in enabled
+            else ""
+        )
+        guidelines.append(
+            f"- **Include `chart_generator` _only_ if {chart_desc['use_when'].lower()}**. If included, `chart_generator` must be {chart_desc['position_requirement'].lower()}. Visualizations should include all of the data from the previous steps that is reasonable for the chart type.{cs_hint}"
+        )
+
     # Synthesizer default
     if "synthesizer" in enabled:
-        synth_desc = descriptions['synthesizer'] 
-        guidelines.append(f"  – Otherwise use `synthesizer` as {synth_desc['position_requirement'].lower()}, and be sure to include all of the data from the previous steps.")
-    
+        synth_desc = descriptions["synthesizer"]
+        guidelines.append(
+            f"  – Otherwise use `synthesizer` as {synth_desc['position_requirement'].lower()}, and be sure to include all of the data from the previous steps."
+        )
+
     return "\n".join(guidelines)
+
 
 def format_agent_guidelines_for_executor(state: State | None = None) -> str:
     """
@@ -133,27 +167,32 @@ def format_agent_guidelines_for_executor(state: State | None = None) -> str:
     descriptions = get_agent_descriptions()
     enabled = _get_enabled_agents(state)
     guidelines = []
-    
-    if "web_researcher" in enabled:
-        web_desc = descriptions['web_researcher']
-        guidelines.append(f"- Use `\"web_researcher\"` when {web_desc['use_when'].lower()}.")
-    if "cortex_researcher" in enabled:
-        cortex_desc = descriptions['cortex_researcher']
-        guidelines.append(f"- Use `\"cortex_researcher\"` for {cortex_desc['use_when'].lower()}.")
-    
+
+    if "researcher" in enabled:
+        researcher_desc = descriptions["researcher"]
+        guidelines.append(
+            f"- Use `\"researcher\"` for {researcher_desc['use_when'].lower()}."
+        )
+    if "cortex_analyst" in enabled:
+        cortex_desc = descriptions["cortex_analyst"]
+        guidelines.append(
+            f"- Use `\"cortex_analyst\"` for {cortex_desc['use_when'].lower()}."
+        )
+
     return "\n".join(guidelines)
+
 
 def plan_prompt(state: State) -> HumanMessage:
     """
     Build the prompt that instructs the LLM to return a high‑level plan.
     """
-    replan_flag   = state.get("replan_flag", False)
-    user_query    = state.get("user_query", state["messages"][0].content)
-    prior_plan    = state.get("plan") or {}
+    replan_flag = state.get("replan_flag", False)
+    user_query = state.get("user_query", state["messages"][0].content)
+    prior_plan = state.get("plan") or {}
     replan_reason = state.get("last_reason", "")
-    
+
     # Get agent descriptions dynamically
-    
+
     agent_list = format_agent_list_for_planning(state)
     agent_guidelines = format_agent_guidelines_for_planning(state)
 
@@ -161,10 +200,20 @@ def plan_prompt(state: State) -> HumanMessage:
 
     # Build planner agent enum based on enabled agents
     enabled_for_planner = [
-        a for a in enabled_list
-        if a in ("web_researcher", "cortex_researcher", "chart_generator", "synthesizer")
+        a
+        for a in enabled_list
+        if a
+        in (
+            "researcher",
+            "cortex_analyst",
+            "chart_generator",
+            "synthesizer",
+        )
     ]
-    planner_agent_enum = " | ".join(enabled_for_planner) or "web_researcher | chart_generator | synthesizer"
+    planner_agent_enum = (
+        " | ".join(enabled_for_planner)
+        or "researcher | cortex_analyst | chart_generator | synthesizer"
+    )
 
     prompt = f"""
         You are the **Planner** in a multi‑agent system.  Break the user's request
@@ -219,8 +268,9 @@ def plan_prompt(state: State) -> HumanMessage:
         prompt += "\nGenerate a new plan from scratch."
 
     prompt += f'\nUser query: "{user_query}"'
-    
+
     return HumanMessage(content=prompt)
+
 
 def executor_prompt(state: State) -> HumanMessage:
     """
@@ -229,18 +279,18 @@ def executor_prompt(state: State) -> HumanMessage:
     step = int(state.get("current_step", 0))
     latest_plan: Dict[str, Any] = state.get("plan") or {}
     plan_block: Dict[str, Any] = latest_plan.get(str(step), {})
-    max_replans    = MAX_REPLANS
-    attempts       = (state.get("replan_attempts", {}) or {}).get(step, 0)
-    
+    max_replans = MAX_REPLANS
+    attempts = (state.get("replan_attempts", {}) or {}).get(step, 0)
+
     # Get agent guidelines dynamically
     executor_guidelines = format_agent_guidelines_for_executor(state)
-    plan_agent = plan_block.get("agent", "web_researcher")
+    plan_agent = plan_block.get("agent", "researcher")
 
     messages_tail = (state.get("messages") or [])[-4:]
 
     executor_prompt = f"""
         You are the **executor** in a multi‑agent system with these agents:
-        `{ '`, `'.join(sorted(set([a for a in _get_enabled_agents(state) if a in ['web_researcher','cortex_researcher','chart_generator','chart_summarizer','synthesizer']] + ['planner']))) }`.
+        `{ '`, `'.join(sorted(set([a for a in _get_enabled_agents(state) if a in ['researcher','cortex_analyst','chart_generator','chart_summarizer','synthesizer']] + ['planner']))) }`.
 
         **Tasks**
         1. Decide if the current plan needs revision.  → `"replan_flag": true|false`
@@ -259,7 +309,7 @@ def executor_prompt(state: State) -> HumanMessage:
 
         {{
         "replan": <true|false>,
-        "goto": "<{ '|'.join([a for a in _get_enabled_agents(state) if a in ['web_researcher','cortex_researcher','chart_generator','chart_summarizer','synthesizer']] + ['planner']) }>",
+        "goto": "<{ '|'.join([a for a in _get_enabled_agents(state) if a in ['researcher','cortex_analyst','chart_generator','chart_summarizer','synthesizer']] + ['planner']) }>",
         "reason": "<1 sentence>",
         "query": "<text>"
         }}
@@ -279,7 +329,7 @@ def executor_prompt(state: State) -> HumanMessage:
 
         ### Build `"query"`
         Write a clear, standalone instruction for the chosen agent. If the chosen agent 
-        is `web_researcher` or `cortex_researcher`, the query should be a standalone question, 
+        is `researcher` or `cortex_analyst`, the query should be a standalone question, 
         written in plain english, and answerable by the agent.
 
         Ensure that the query uses consistent language as the user's query.
@@ -294,9 +344,8 @@ def executor_prompt(state: State) -> HumanMessage:
         Respond **only** with JSON, no extra text.
         """
 
-    return HumanMessage(
-        content=executor_prompt
-    )
+    return HumanMessage(content=executor_prompt)
+
 
 def agent_system_prompt(suffix: str) -> str:
     return (

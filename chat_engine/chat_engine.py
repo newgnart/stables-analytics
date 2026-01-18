@@ -6,15 +6,15 @@ from langchain.schema import HumanMessage
 from langfuse import observe
 
 from langgraph.graph import StateGraph, START
-from agents import (
+from .agents import (
     State,
     planner_node,
     executor_node,
-    web_research_node,
+    researcher_node,
     chart_node,
     chart_summary_node,
     synthesizer_node,
-    cortex_research_node,
+    cortex_analyst_node,
 )
 
 
@@ -30,12 +30,11 @@ def build_graph():
     workflow = StateGraph(State)
     workflow.add_node("planner", planner_node)
     workflow.add_node("executor", executor_node)
-    workflow.add_node("web_researcher", web_research_node)
+    workflow.add_node("researcher", researcher_node)
     workflow.add_node("chart_generator", chart_node)
     workflow.add_node("chart_summarizer", chart_summary_node)
     workflow.add_node("synthesizer", synthesizer_node)
-
-    workflow.add_node("cortex_researcher", cortex_research_node)
+    workflow.add_node("cortex_analyst", cortex_analyst_node)
 
     workflow.add_edge(START, "planner")
 
@@ -54,19 +53,13 @@ def chat_engine(query: str, enabled_agents: Optional[List[str]] = None):
     Returns:
         The result of the graph invocation
     """
-    # Update Langfuse context with metadata
-    # langfuse_context.update_current_trace(
-    #     user_id="user",
-    #     session_id="chat_session",
-    #     metadata={"query": query, "enabled_agents": enabled_agents},
-    # )
     if enabled_agents is None:
         default_agents = [
-            "web_researcher",
+            "researcher",
             "chart_generator",
             "chart_summarizer",
             "synthesizer",
-            "cortex_researcher",
+            "cortex_analyst",
         ]
         enabled_agents = default_agents
 
@@ -80,29 +73,42 @@ def chat_engine(query: str, enabled_agents: Optional[List[str]] = None):
     return graph.invoke(state)
 
 
-def visualize_graph():
-    """Display the graph structure (for Jupyter notebooks)."""
-    try:
-        from IPython.display import Image, display
+def visualize_graph(output_path: str = "graph.png"):
+    """
+    Save the graph structure as a PNG file.
 
-        graph = build_graph()
-        display(Image(graph.get_graph().draw_png()))
-    except ImportError:
-        print("IPython not available. Graph visualization skipped.")
+    Args:
+        output_path: Path where the PNG file will be saved. Defaults to "graph.png"
+    """
+    graph = build_graph()
+    png_data = graph.get_graph().draw_png()
+
+    with open(output_path, "wb") as f:
+        f.write(png_data)
+
+    print(f"Graph saved to {output_path}")
 
 
 def main():
     """Main execution function with example queries."""
-    # query1 = "What is openai's latest product?"
+    # query1 = "What is open stablecoin index?"
     # print(f"Query: {query1}")
     # chat_engine(query1)
     # print("--------------------------------\n")
 
-    query2 = "What are the top 3 minting addresses in fct_mint table?"
-    print(f"Query: {query2}")
-    chat_engine(query2)
+    # query2 = "What are the top 3 minting addresses in fct_mint table?"
+    # print(f"Query: {query2}")
+    # chat_engine(query2)
+    # print("--------------------------------\n")
+
+    query3 = "Give me the chart of the top 3 minting addresses in the fct_mint table?"
+    # without saying fct_mint tracing: https://us.cloud.langfuse.com/project/cmkf6fdvf000rad07vt5hp9k0/traces/25a46aa42bf8dc0ff218ecdbc7eb4dcf?observation=8bcf14c9052b0daa&timestamp=2026-01-18T05:49:57.382Z
+    # final answer: I have been instructed to generate a chart using given data. Could you provide the minting data?
+    print(f"Query: {query3}")
+    chat_engine(query3)
     print("--------------------------------\n")
 
 
 if __name__ == "__main__":
     main()
+    # visualize_graph("chat_engine_graph.png")
